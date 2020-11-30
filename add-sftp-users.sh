@@ -12,27 +12,22 @@
 ldap_server="ldaps://myldapserver.com"
 special_dn="cn=my_cn,ou=my_ou,dc=myldapserver,dc=com"
 
-working_dir="/usr/local/bin/add-sftp-users"
-user_list="${working_dir}/user_list"
-ldap_results="${working_dir}/ldap_results.tmp"
-valid_usernames="${working_dir}/valid_usernames.tmp"
+user_list="user_list"
+ldap_results="ldap_results.tmp"
+valid_usernames="valid_usernames.tmp"
 
 # The LDAP password file specified below must not contain a newline, because the 'ldapsearch' command will
 # include the newline as part of the password. To get around this, remove the newline using whatever
 # method you prefer, for example: truncate --size=-1 ldap_pw_file
-ldap_pw_file="${working_dir}/ldap_pw"
+ldap_pw_file="ldap_pw"
 
 # The user details below will be applied to all new SFTP users.
 primary_group="sftp"
 shell="/usr/libexec/openssh/sftp-server"
 home="/sftp_root"
 
-# Valid usernames must start with a letter, and contain only letters and numbers.
-# Leading white space is OK.
-egrep ^[[:space:]]*[[:alpha:]]+[[:alnum:]]+ "$user_list" > "$valid_usernames"
-
-# The input file $valid_usernames is fed into the while loop at the bottom of the script, at the 'done' line.
-while read line ; do
+# The input file $user_list is fed into the while loop at the bottom of the script, at the 'done' line.
+while read -r line ; do
 
    # Get first field of the colon-delimited line, remove white space, convert anything uppercase to lowercase.
    username=$(echo "$line" | awk -F: '{ print $1 }' | tr -d [:blank:] | tr [:upper:] [:lower:])
@@ -42,16 +37,14 @@ while read line ; do
 
    echo "Working on username: $username"
 
-   # Double check that the username doesn't contain special characters. The egrep command above should be sufficient at catching this,
-   # but we double check here because if somehow special characters did slip through, a malicious user could inject arbitrary commands
-   # that would run as root.
+   # Make sure the username doesn't contain special characters.
    if [[ "$username" =~ [[:punct:]] ]] ; then
       echo " --- ERROR: Bailing out because the username '$username' contains invalid characters."
       echo
       exit 1
    fi
 
-   # Make sure the additional groups don't contain special characters, same reason as above.
+   # Make sure the additional groups don't contain special characters.
    if [[ "$additional_groups" =~ [[:punct:]] ]] ; then
       echo " --- ERROR: Bailing out because the group list for '$username' contains invalid characters: $additional_groups"
       echo
@@ -60,7 +53,7 @@ while read line ; do
 
    # Make sure each of the additional groups actually exists.
    for groupname in $additional_groups ; do
-      if [[ ! $(getent group $groupname) ]] ; then
+      if ! getent group "$groupname" ; then
          echo " --- ERROR: Bailing out because the group list for '$username' contains an invalid group: $groupname"
          echo
          exit 1
@@ -129,8 +122,8 @@ while read line ; do
    groups "$username" | awk -F": " '{ print $2 }'
    echo
 
-done < "$valid_usernames"
+done < "$user_list"
 
-rm -f "$ldap_results" "$valid_usernames"
+rm -f "$ldap_results"
 
 echo "All done."
