@@ -1,4 +1,4 @@
-# add-sftp-users
+# add-sftp-users-from-ldap
 Bash script that adds SFTP users by querying LDAP to get UID and GECOS.
 
 The config file 'user_list' contains the list of users (and optionally a colon followed by additional groups) to be added. The file format is the same as the output of the 'groups' command, such as:
