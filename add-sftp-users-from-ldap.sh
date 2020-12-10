@@ -1,28 +1,42 @@
 #!/bin/bash
 #
-# This script creates SFTP users by reading in a list of usernames, then fetching each user's UID and GECOS from LDAP.
+# add-sftp-users-from-ldap.sh
+# initial version: 2020/12/01, Nicholas Inabnit
 #
-# The config file 'user_list' contains the list of users (and optionally a colon followed by additional groups) to be added.
-# The file format is the same as the output of the 'groups' command, such as:
+# This script creates SFTP users by reading in a list of usernames,
+# then fetching each user's UID and GECOS from LDAP.
+#
+# The config file 'user_list' contains the list of users (and optionally a colon
+# followed by additional groups) to be added. The file format is the same as the
+# output of the 'groups' command, such as:
 #    user1 : group1 group2
 #    user2
 #    user3 : group1
 #    user4 : group3 group4 group5
+#
+# The config file 'ldap_pw' must NOT contain a newline, because the 'ldapsearch'
+# command treats all characters (including the newline) as part of the password.
+# To get around this, remove the newline using whatever method you prefer,
+# for example: truncate --size=-1 ldap_pw_file
+#
+################################################################################
 
+# Specify the LDAP server and special DN.
 ldap_server="ldaps://myldapserver.com"
 special_dn="cn=my_cn,ou=my_ou,dc=myldapserver,dc=com"
 
+# Specify the file containg the list of usernames to add.
 user_list="user_list"
-ldap_results="ldap_results.tmp"
-valid_usernames="valid_usernames.tmp"
 
-# The LDAP password file specified below must not contain a newline, because the 'ldapsearch' command will
-# include the newline as part of the password. To get around this, remove the newline using whatever
-# method you prefer, for example: truncate --size=-1 ldap_pw_file
+# Specify the file where LDAP results will be temporarily saved.
+ldap_results="ldap_results.tmp"
+
+# Specify the file containing the password for querying LDAP.
+# Make sure the file does NOT contain a newline!
 ldap_pw_file="ldap_pw"
 
 # The user details below will be applied to all new SFTP users.
-primary_group="sftp"
+primary_group="sftp_users"
 shell="/usr/libexec/openssh/sftp-server"
 home="/sftp_root"
 
@@ -66,12 +80,16 @@ while read -r line ; do
    #    ^ group1   group2 group3   $
    # to become this:
    #    ^group1,group2,group3$
+   #
+   # Below, the 'xargs' command removes leading and trailing white space.
+   # Then the 'sed' command replaces the delimiting spaces with commas.
    additional_groups=$(echo $additional_groups | xargs echo -n | sed 's/ /,/g')
 
    # Check if the user already has a local account.
    user_info=$(getent passwd "$username")
    if [[ -n "$user_info" ]] ; then
       echo " --- WARNING: Skipping '$username' because the user already exists on this server:"
+
       # Display the existing user info and group membership.
       echo "$user_info"
       echo -n "Group membership: "
@@ -89,7 +107,7 @@ while read -r line ; do
       exit 1
    fi
    
-   # Get the user's GECOS and UID number.
+   # Get the user's GECOS and UID number from the 'ldap_results' file.
    gecos=$(grep 'gecos: ' "$ldap_results" | awk -F": " '{ print $2 }')
    uid_number=$(grep 'uidNumber: ' "$ldap_results" | awk -F": " '{ print $2 }')
    
@@ -109,11 +127,13 @@ while read -r line ; do
       return_code=$?
    fi
 
+   # Exit with a non-zero status if the 'useradd' command failed.
    if [[ $return_code -ne 0 ]] ; then
       echo " --- ERROR: Bailing out because the 'useradd' command failed."
       exit 1
    fi
 
+   # If we made it this far, the user was added.
    echo "Successfully added user."
 
    # Display the new user's info and group membership.
@@ -124,6 +144,8 @@ while read -r line ; do
 
 done < "$user_list"
 
+# Clean up the temporary file 'ldap_results'.
 rm -f "$ldap_results"
 
+# Declare victory.
 echo "All done."
